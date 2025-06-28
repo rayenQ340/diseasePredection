@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tumor Digital Twin Dashboard</title>
+    <style>
+        body { margin: 0; font-family: Arial, sans-serif; }
+        #canvas { width: 100vw; height: 70vh; }
+        #controls { padding: 20px; text-align: center; }
+        label { font-size: 18px; margin-right: 10px; }
+        input[type="text"] { width: 100px; font-size: 16px; padding: 5px; }
+        #efficacyValue { margin-left: 10px; }
+    </style>
+</head>
+<body>
+    <div id="canvas"></div>
+    <div id="controls">
+        <label for="efficacy">Drug Efficacy (%):</label>
+        <input type="text" id="efficacy" value="50">
+        <span id="efficacyValue">50%</span>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134/examples/js/controls/OrbitControls.js"></script>
+    <script>
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / (window.innerHeight * 0.7), 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight * 0.7);
+        document.getElementById('canvas').appendChild(renderer.domElement);
+
+        const light = new THREE.DirectionalLight(0xffffff, 1);
+        light.position.set(5, 5, 5);
+        scene.add(light);
+        scene.add(new THREE.AmbientLight(0x404040));
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        const loader = new THREE.GLTFLoader();
+        let model, mixer, animation;
+        let currentAnimationTime = 0;
+        let targetAnimationTime = 0;
+        let animationStartTime = 0;
+        const animationDuration = 3; // Increased to 3 seconds for slower transition
+
+        loader.load('tumor_animation.glb', (gltf) => {
+            model = gltf.scene;
+            scene.add(model);
+            mixer = new THREE.AnimationMixer(model);
+            animation = mixer.clipAction(gltf.animations[0]);
+            if (animation) {
+                animation.play();
+                animation.paused = true; // Pause to control manually
+                // Set initial animation time (50% efficacy)
+                const duration = animation.getClip().duration;
+                currentAnimationTime = (50 / 100) * duration;
+                targetAnimationTime = currentAnimationTime;
+                animation.time = currentAnimationTime;
+                mixer.update(0);
+            } else {
+                console.error('No animation found in GLB file');
+            }
+            camera.position.z = 0.5;
+        }, undefined, (error) => {
+            console.error('Error loading model:', error);
+        });
+
+        const efficacyInput = document.getElementById('efficacy');
+        const efficacyValue = document.getElementById('efficacyValue');
+
+        efficacyInput.addEventListener('input', (event) => {
+            let efficacy = parseFloat(event.target.value);
+            // Validate input: ensure it's a number between 0 and 100
+            if (isNaN(efficacy) || efficacy < 0 || efficacy > 100) {
+                efficacy = Math.max(0, Math.min(100, efficacy || 0)); // Clamp to 0-100
+                event.target.value = efficacy; // Update input field
+            }
+            efficacyValue.textContent = `${efficacy}%`;
+            if (animation) {
+                const duration = animation.getClip().duration;
+                targetAnimationTime = (efficacy / 100) * duration; // Set target time
+                animationStartTime = performance.now() / 1000; // Record start time
+            }
+        });
+
+        function lerp(start, end, t) {
+            return start + (end - start) * t;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (animation && currentAnimationTime !== targetAnimationTime) {
+                const currentTime = performance.now() / 1000;
+                const elapsed = currentTime - animationStartTime;
+                const t = Math.min(elapsed / animationDuration, 1); // Progress (0 to 1)
+                currentAnimationTime = lerp(currentAnimationTime, targetAnimationTime, t);
+                animation.time = currentAnimationTime;
+                mixer.update(0); // Update animation to current time
+                if (t >= 1) {
+                    currentAnimationTime = targetAnimationTime; // Ensure exact end value
+                }
+            }
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / (window.innerHeight * 0.7);
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight * 0.7);
+        });
+    </script>
+</body>
+</html>
